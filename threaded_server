@@ -1,0 +1,185 @@
+#!/usr/bin/env ruby
+
+require "socket"
+
+PATH = "socket.sock"
+
+class WorkerPool
+  attr_reader(:mutex, :cv, :tasks, :min_workers, :max_workers, :workers, :tasks)
+  attr_accessor(:idle)
+
+  def initialize(min_workers: 5, max_workers: 5)
+    @mutex = Mutex.new
+    @cv = ConditionVariable.new
+    @idle = 0
+    @tasks = []
+    @min_workers = min_workers
+    @max_workers = max_workers
+
+    @workers = min_workers.times.map { spawn_worker }
+  end
+
+  def spawn_worker
+    Thread.new do
+      while true
+        task = nil
+        mutex.synchronize do
+          while tasks.empty?
+            @idle += 1
+            cv.wait(mutex)
+            @idle -= 1
+          end
+          task = tasks.shift
+        end
+
+        task.process
+      end
+    end
+  end
+
+  def <<(work)
+    mutex.synchronize do
+      # puts "pool capacity: #{pool_capacity}"
+      # puts "idle: #{idle}"
+      # puts "workers: #{workers.length}"
+      # puts "backlog: #{tasks.length}"
+      workers << spawn_worker if spawn_more?
+      tasks.push(work)
+      cv.signal
+    end
+  end
+
+  def pool_capacity
+    (max_workers - workers.length) + idle
+  end
+
+  def spawn_more?
+    idle < 1 && workers.length < max_workers
+  end
+end
+
+
+class Work
+  def process
+    "Processing work in #{Thread.current}"
+    70000000.times do
+      
+    end
+  end
+end
+
+class Server
+  attr_reader :socket, :worker_pool
+
+  def initialize(worker_pool)
+    File.unlink(PATH) if File.exists?(PATH)
+    @socket = UNIXServer.new(PATH)
+    @worker_pool = worker_pool
+  end
+
+  def run
+    loop do
+      puts("Threaded server started, ready to accept connections")
+      Thread.start(socket.accept) do |client|
+        puts "Processing new request"
+        # Use recv instead of readpartial to avoid EOFError when client closes
+        data = client.recv(1000).strip
+
+        if data == "STREAM"
+          loop do
+            print_stats(client)
+            sleep 0.5
+          end
+        else
+          print_stats(client)
+          client.close
+        end
+      rescue Errno::EPIPE
+        puts "Client disconnected"
+        client.close
+      end
+    end
+  rescue SignalException => e
+    socket.close
+  end
+
+  def print_stats(client)
+    client.puts "pool capacity: #{worker_pool.pool_capacity}"
+    client.puts "idle: #{worker_pool.idle}"
+    client.puts "workers: #{worker_pool.workers.length}"
+    # client.puts "backlog: #{worker_pool.tasks.length}"
+  end
+end
+
+
+class Launcher
+  attr_reader :worker_pool
+
+  def initialize(worker_pool: nil)
+    @worker_pool = worker_pool || WorkerPool.new(min_workers: 5, max_workers: 8)
+  end
+
+  def launch
+    Thread.new do
+      Server.new(worker_pool).run
+    end
+
+    while true
+      sleep(rand(0..1.5))
+      worker_pool << Work.new
+    end
+  end
+end
+
+
+
+Launcher.new.launch
+
+
+
+
+# require "thwait"
+# semaphore = Mutex.new
+# varia = ConditionVariable.new
+
+
+# arr = []
+
+# th1 = Thread.new {
+  
+#   semaphore.synchronize {
+#     while true
+#       puts "idle worker 1"
+#       arr << arr.fetch(-1, 0) + 5
+#      if arr.length > 100
+#       varia.signal
+#      end
+#       break if arr.length > 200
+#     end
+#   }
+# }
+
+# th2 = Thread.new {
+#   semaphore.synchronize {
+#     while true
+#       puts "idle worker 2"
+#       # deadlock occurs when a worker releases the lock on the mutex (with a CV) but there are no other workers awake to acquire the lock.
+#       varia.wait(semaphore)
+#       arr << arr.fetch(-1, 0) + 3
+#       varia.signal if arr.length > 100
+#       break if arr.length > 300
+#     end
+#   }
+# }
+
+# semaphore.synchronize { while true; end }
+
+# puts th1, th2
+# # puts th1, th2, Thread.main
+# th1.join
+# th2.join
+
+
+# p arr
+
+

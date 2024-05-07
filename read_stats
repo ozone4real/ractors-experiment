@@ -1,0 +1,16 @@
+#!/usr/bin/env ruby
+
+require "socket"
+PATH = "socket.sock"
+
+socket = UNIXSocket.new(PATH)
+
+if ARGV[0] == "stream"
+  socket.puts "STREAM"
+else
+  socket.puts "It's nothing"
+end
+
+while line = socket.gets do
+  puts line
+end
