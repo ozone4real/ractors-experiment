@@ -1,15 +1,17 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
 
 require "socket"
 
 PATH = "socket.sock"
 
 class WorkerPool
-  attr_reader(:mutex, :tasks, :min_workers, :max_workers, :workers, :tasks, :stats_ractor, :actor)
+  attr_reader(:mutex, :tasks, :min_workers, :max_workers, :workers, :tasks, :stats_ractor, :actor, :processed)
   attr_accessor(:idle)
 
   def initialize(min_workers: 5, max_workers: 5)
     @idle = 0
+    @processed = 0
     @tasks = []
     @min_workers = min_workers.freeze
     @max_workers = max_workers.freeze
@@ -23,7 +25,13 @@ class WorkerPool
     Thread.new do
       loop do
         c = @stats_ractor.take
-        @idle += c
+        if c == 1
+          @idle += 1
+        elsif c == -1
+          @idle -= 1
+        elsif c == 0
+          @processed += 1
+        end
       end
     end
 
@@ -36,7 +44,8 @@ class WorkerPool
         stats_ractor.send(1)
         work = actor.take
         stats_ractor.send(-1)
-        work.process 
+        work.process
+        stats_ractor.send(0)
       end
     end
   end
@@ -69,9 +78,10 @@ class Server
   attr_reader :socket, :worker_pool
 
   def initialize(worker_pool)
-    File.unlink(PATH) if File.exists?(PATH)
+    File.unlink(PATH) if File.exist?(PATH)
     @socket = UNIXServer.new(PATH)
     @worker_pool = worker_pool
+    @start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
   end
 
   def run
@@ -104,6 +114,7 @@ class Server
     client.puts "pool capacity: #{worker_pool.pool_capacity}"
     client.puts "idle: #{worker_pool.idle}"
     client.puts "workers: #{worker_pool.workers.length}"
+    client.puts "processed: #{worker_pool.processed} in #{Process.clock_gettime(Process::CLOCK_MONOTONIC) - @start_time} seconds"
     # client.puts "backlog: #{worker_pool.tasks.length}"
   end
 end
