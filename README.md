@@ -15,4 +15,14 @@ The `read_stats` client script can be used to stream stats about the server's po
 ./read_stats stream
 ```
 
+You'll see stats like the following printed:
+```
+pool capacity: 3
+idle: 2
+workers: 8
+processed: 20 in 31.73919400000068 seconds
+```
+
+Running the experiment on my Macbook M3 (12 cores) shows that on average, the ractor-based worker pool processes 2x more work than the thread-based one in the same amount of time.
+
 Requires Ruby version > 3.0

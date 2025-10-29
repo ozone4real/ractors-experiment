@@ -6,13 +6,12 @@ require "socket"
 PATH = "socket.sock"
 
 class WorkerPool
-  attr_reader(:mutex, :tasks, :min_workers, :max_workers, :workers, :tasks, :stats_ractor, :actor, :processed)
+  attr_reader(:min_workers, :max_workers, :workers, :stats_ractor, :actor, :processed)
   attr_accessor(:idle)
 
   def initialize(min_workers: 5, max_workers: 5)
     @idle = 0
     @processed = 0
-    @tasks = []
     @min_workers = min_workers.freeze
     @max_workers = max_workers.freeze
     @actor = Ractor.new { loop { Ractor.yield(Ractor.receive) } }
